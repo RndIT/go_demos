@@ -21,7 +21,7 @@ func greet(c chan string, cntrol chan int) {
 }
 
 func main() {
-	var names = [...]string{"A", "b", "c", "d", "e"}
+	var names = [...]string{"A", "b", "c", "d", "e","dd","323"}
 
 	fmt.Println("main() started")
 	c := make(chan string, 2)
