@@ -1,18 +1,33 @@
 package main
 
 import (
-	"context"
-	"fmt"
+	"os"
 
-	"github.com/RndIT/go_demos/internal/domain/service"
+	utils "github.com/RndIT/go_demos/internal/Utils"
+	log "github.com/sirupsen/logrus"
 )
+
+func init() {
+	// Log as JSON instead of the default ASCII formatter.
+	log.SetFormatter(&log.JSONFormatter{})
+
+	// Output to stdout instead of the default stderr
+	// Can be any io.Writer, see below for File example
+	log.SetOutput(os.Stdout)
+
+	// Only log the warning severity or above.
+	log.SetLevel(log.InfoLevel)
+	log.SetReportCaller(true)
+
+}
 
 func main() {
 	// инициализация контекста
-	ctx := context.Background()
+	ctxLogger := log.WithFields(log.Fields{
+		"module": utils.GetFunctionName(main),
+		"other":  "I also should be logged always",
+	})
 
-	servAcc := service.NewAccountService()
-	r := servAcc.GetAccountsList(ctx)
-	fmt.Println(r)
-	fmt.Println("main() stopped")
+	ctxLogger.Info("I'll be logged with common and other field")
+	ctxLogger.Info("Me too")
 }
