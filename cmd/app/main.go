@@ -1,33 +1,103 @@
 package main
 
 import (
-	"os"
+	"errors"
+	"fmt"
 
-	utils "github.com/RndIT/go_demos/internal/Utils"
-	log "github.com/sirupsen/logrus"
+	"github.com/RndIT/go_demos/internal/config"
+	"github.com/RndIT/go_demos/internal/domain/user_service"
+	"github.com/RndIT/go_demos/internal/handlers/auth"
+	"github.com/RndIT/go_demos/pkg/cache/freecache"
+	metric "github.com/RndIT/go_demos/pkg/handlers/metrics"
+	"github.com/RndIT/go_demos/pkg/jwt"
+	"github.com/RndIT/go_demos/pkg/logging"
+	"github.com/RndIT/go_demos/pkg/shutdown"
+	"github.com/julienschmidt/httprouter"
+
+	"net"
+	"net/http"
+	"os"
+	"path"
+	"path/filepath"
+	"syscall"
+	"time"
 )
 
-func init() {
-	// Log as JSON instead of the default ASCII formatter.
-	log.SetFormatter(&log.JSONFormatter{})
+func main() {
+	logging.Init()
+	logger := logging.GetLogger()
+	logger.Println("logger initialized")
 
-	// Output to stdout instead of the default stderr
-	// Can be any io.Writer, see below for File example
-	log.SetOutput(os.Stdout)
+	logger.Println("config initializing")
+	cfg := config.GetConfig()
 
-	// Only log the warning severity or above.
-	log.SetLevel(log.InfoLevel)
-	log.SetReportCaller(true)
+	logger.Println("router initializing")
+	router := httprouter.New()
 
+	logger.Println("cache initializing")
+	refreshTokenCache := freecache.NewCacheRepo(104857600) // 100MB
+
+	logger.Println("helpers initializing")
+	jwtHelper := jwt.NewHelper(refreshTokenCache, logger)
+
+	logger.Println("create and register handlers")
+
+	metricHandler := metric.Handler{Logger: logger}
+	metricHandler.Register(router)
+
+	userService := user_service.NewService(cfg.UserService.URL, "/users", logger)
+	authHandler := auth.Handler{JWTHelper: jwtHelper, UserService: userService, Logger: logger}
+	authHandler.Register(router)
+
+	logger.Println("start application")
+	start(router, logger, cfg)
 }
 
-func main() {
-	// инициализация контекста
-	ctxLogger := log.WithFields(log.Fields{
-		"module": utils.GetFunctionName(main),
-		"other":  "I also should be logged always",
-	})
+func start(router *httprouter.Router, logger logging.Logger, cfg *config.Config) {
+	var server *http.Server
+	var listener net.Listener
 
-	ctxLogger.Info("I'll be logged with common and other field")
-	ctxLogger.Info("Me too")
+	if cfg.Listen.Type == "sock" {
+		appDir, err := filepath.Abs(filepath.Dir(os.Args[0]))
+		if err != nil {
+			logger.Fatal(err)
+		}
+		socketPath := path.Join(appDir, "app.sock")
+		logger.Infof("socket path: %s", socketPath)
+
+		logger.Info("create and listen unix socket")
+		listener, err = net.Listen("unix", socketPath)
+		if err != nil {
+			logger.Fatal(err)
+		}
+	} else {
+		logger.Infof("bind application to host: %s and port: %s", cfg.Listen.BindIP, cfg.Listen.Port)
+
+		var err error
+
+		listener, err = net.Listen("tcp", fmt.Sprintf("%s:%s", cfg.Listen.BindIP, cfg.Listen.Port))
+		if err != nil {
+			logger.Fatal(err)
+		}
+	}
+
+	server = &http.Server{
+		Handler:      router,
+		WriteTimeout: 15 * time.Second,
+		ReadTimeout:  15 * time.Second,
+	}
+
+	go shutdown.Graceful([]os.Signal{syscall.SIGABRT, syscall.SIGQUIT, syscall.SIGHUP, os.Interrupt, syscall.SIGTERM},
+		server)
+
+	logger.Println("application initialized and started")
+
+	if err := server.Serve(listener); err != nil {
+		switch {
+		case errors.Is(err, http.ErrServerClosed):
+			logger.Warn("server shutdown")
+		default:
+			logger.Fatal(err)
+		}
+	}
 }
