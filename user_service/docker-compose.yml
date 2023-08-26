@@ -8,8 +8,9 @@ services:
     environment:
       - MONGO_INITDB_ROOT_USERNAME=mongoadm
       - MONGO_INITDB_ROOT_PASSWORD=mongoadm
+      - MONGO_INITDB_DATABASE=notification_system
     volumes:
-      - ./init.js:/docker-entrypoint-initdb.d/init.js
+      - ./init.js:/docker-entrypoint-initdb.d/init.js:ro
       - ./mongo-volume:/data/db
     ports:
       - 27017:27017

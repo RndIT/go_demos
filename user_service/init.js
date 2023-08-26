@@ -1,15 +1,21 @@
+// admin
 db = db.getSiblingDB('admin');
 // move to the admin db - always created in Mongo
-db.auth("mongoadm", "mongoadm");
-// log as root admin if you decided to authenticate in your docker-compose file...
-db = db.getSiblingDB('DB_test');
-// create and move to your new database
-db.createUser({
-'user': "dbUser",
-'pwd': "dbPwd",
-'roles': [{
-	'role': 'dbOwner',
-	'db': 'DB_test'}]});
-// user created
-db.createCollection('collection_test');
-// add new collection
+db.auth("mongoadm", "mongoadm")
+
+// user
+userdb = db.getSiblingDB("notification_system")
+userdb.createUser({
+  "user": "nsuser",
+  "pwd" : "nsuser",
+  "roles": [
+    { "role" : "readWrite", "db" : "notification_system"}
+  ],
+  "mechanisms": [ "SCRAM-SHA-1" ],
+  "passwordDigestor": "client"
+})
+userdb.auth("nsuser", "nsuser")
+
+userdb.log.insertOne({"message": "Database created."});
+
+userdb.createCollection("collection123123")
